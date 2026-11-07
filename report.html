@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="언론 보도 데이터의 추세·상관·유의성 통계 분석 보고서">
+<title>홍보 성과 분석 보고서</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+.card h2 .no { color: var(--brand-ink); margin-right: 6px; }
+.report-meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.headline { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.list { margin: 0; padding-left: 18px; color: var(--text-2); }
+.list li { margin: 5px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chip { font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; color: var(--text-2); }
+.chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sig { font-weight: 700; font-size: 12px; }
+.sig.yes { color: var(--up); }
+.sig.no { color: var(--muted); }
+.ai { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ai) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ai) 30%, var(--border)); }
+.ai .ai-tag { margin-bottom: 6px; display: inline-block; }
+.ai p { margin: 4px 0 0; color: var(--text-2); }
+.note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+table.heat td { text-align: center; font-variant-numeric: tabular-nums; }
+table.heat th { text-align: center; }
+.methods { font-size: 12.5px; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.methods ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+<script src="assets/vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="ribbon"><div class="wrap">뉴스 데이터 기반 홍보 성과 모니터링</div></div>
+<header class="masthead">
+  <div class="wrap">
+    <img class="logo" src="assets/logo.svg" alt="">
+    <div>
+      <h1><span data-brand="region">지역</span> 홍보사업 성과 통계 분석 보고서</h1>
+      <div class="report-meta" id="meta"></div>
+    </div>
+    <div class="mast-actions">
+      <a class="btn" href="./">← 대시보드</a>
+      <button class="btn" id="themeBtn">◐ 테마</button>
+      <button class="btn" onclick="print()">인쇄</button>
+    </div>
+  </div>
+</header>
+<main><div class="wrap" id="root"></div></main>
+<footer class="footer">
+  <div class="wrap">
+    <b data-brand="org">운영 기관명</b>
+    <span class="copy">© <span data-brand="year"></span> <span data-brand="org"></span> · <span data-brand="system"></span></span>
+  </div>
+</footer>
+<script src="assets/common.js"></script>
+<script src="data.js"></script>
+<script>
+(function () {
+  const { esc, num, pval, cssVar } = U;
+  const root = document.getElementById("root");
+  const R = window.NEWS_REPORT, META = window.NEWS_DATA && window.NEWS_DATA.meta;
+  U.fillBranding(META);
+  if (!R || !R.ok) { root.innerHTML = `<div class="empty">${R ? esc(R.reason) : "분석 결과가 없습니다. <code>python run.py report</code> 를 실행하세요."}</div>`; return; }
+  const AI = R.ai;
+  const sigBadge = p => p == null ? '<span class="sig no">판단 불가</span>'
+    : p < .05 ? `<span class="sig yes">유의 ${p < .001 ? "***" : p < .01 ? "**" : "*"}</span>` : '<span class="sig no">유의하지 않음</span>';
+  const aiNote = key => AI?.sections?.[key] ? `<div class="ai"><span class="ai-tag">AI 해석</span><p>${esc(AI.sections[key])}</p></div>` : "";
+  const chip = (k, v) => `<span class="chip">${k} <b>${v}</b></span>`;
+  const ROMAN = ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ", "Ⅵ", "Ⅶ", "Ⅷ", "Ⅸ", "Ⅹ"];
+  const parts = [];
+  const section = (title, sub, body) => parts.push(`<section class="card"><h2><span class="no">${ROMAN[parts.length]}.</span>${title}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}${body}</section>`);
+
+  document.getElementById("meta").textContent =
+    `분석 기간 ${R.period.from} ~ ${R.period.until} (${R.period.days}일 · ${R.period.weeks}주) · 기사 ${num(R.n_articles)}건 · 분석 ${(R.generated || "").replace("T", " ")}` +
+    (AI ? ` · 해석 ${AI.model}` : " · AI 해석 없음");
+
+  const T = R.trend, C = R.correlation || [], W = R.weekday, TS = R.topic_spread, TM = R.topic_month, B = R.budget, DS = R.descriptive;
+
+  section("분석 요약", "통계 수치는 Python(scipy)으로 계산" + (AI ? "하고, 해석 문장은 AI가 그 수치만 근거로 작성함" : "함"),
+    AI ? `<div class="headline">${esc(AI.headline)}</div><ul class="list">${(AI.key_findings || []).map(f => `<li>${esc(f)}</li>`).join("")}</ul>`
+       : `<ul class="list">
+            <li>주간 보도량은 주당 <b>${T.slope_per_week > 0 ? "+" : ""}${num(T.slope_per_week, 2)}건</b>씩 ${T.direction}하는 추세입니다 (R² ${num(T.r2, 3)}, ${esc(T.significance)}).</li>
+            <li>주 평균 <b>${num(DS.weekly_articles.mean, 1)}건</b>, 일 평균 <b>${num(DS.daily_articles.mean, 1)}건</b>이 보도되었습니다.</li>
+            ${W ? `<li>평일 보도량은 주말의 <b>${num(W.ratio, 2)}배</b>입니다 (Mann-Whitney p ${pval(W.p)}).</li>` : ""}
+          </ul><p class="note">GEMINI_API_KEY 를 설정하고 <code>python run.py report</code> 를 다시 실행하면 AI 해석이 추가됩니다.</p>`);
+
+  section("기술통계", "보도 건수 분포",
+    `<div class="scroll"><table><thead><tr><th>구분</th><th class="num">표본(n)</th><th class="num">평균</th><th class="num">표준편차</th><th class="num">중앙값</th><th class="num">최소</th><th class="num">최대</th><th class="num">변동계수</th></tr></thead><tbody>
+    ${[["주간 보도 건수", DS.weekly_articles], ["일간 보도 건수", DS.daily_articles]].map(([l, d]) =>
+      `<tr><td>${l}</td><td class="num">${d.n}</td><td class="num">${num(d.mean, 2)}</td><td class="num">${num(d.sd, 2)}</td><td class="num">${num(d.median, 1)}</td><td class="num">${d.min}</td><td class="num">${d.max}</td><td class="num">${num(d.cv, 3)}</td></tr>`).join("")}
+    </tbody></table></div><p class="note">변동계수(표준편차 ÷ 평균)가 클수록 기간별 보도량의 기복이 큽니다.</p>`);
+
+  section("추세 분석", "주차와 주간 보도 건수의 선형회귀 · Spearman 순위상관",
+    `<div class="chips">${chip("기울기", `${T.slope_per_week > 0 ? "+" : ""}${num(T.slope_per_week, 2)}건/주`)}${chip("R²", num(T.r2, 3))}${chip("p", pval(T.p))}
+      ${chip("Spearman ρ", `${num(T.spearman_rho, 3)} (p ${pval(T.spearman_p)})`)}<span class="chip">${sigBadge(T.p)}</span></div>
+     <div class="plot"><canvas id="cTrend" aria-label="주간 보도 건수와 추세선"></canvas></div>${aiNote("trend")}`);
+
+  if (C.length) section("상관분석", `주간 지표와 주간 보도 건수의 상관 (n=${R.period.weeks}주) · 다중비교 Holm 보정`,
+    `<div class="scroll"><table><thead><tr><th>변수</th><th>분석 질문</th><th class="num">n</th><th class="num">Pearson r</th><th class="num">95% 신뢰구간</th><th class="num">p</th><th class="num">보정 p</th><th class="num">Spearman ρ</th><th>강도</th><th>유의성</th></tr></thead><tbody>
+    ${C.map(c => `<tr><td><b>${esc(c.label)}</b>${c.note ? '<div class="note">※ 구조적 상관 포함</div>' : ""}${c.small_sample ? '<div class="note">※ 표본 적음</div>' : ""}</td>
+      <td>${esc(c.question)}</td><td class="num">${c.n}</td><td class="num">${num(c.pearson_r, 3)}</td><td class="num">[${num(c.ci95[0], 3)}, ${num(c.ci95[1], 3)}]</td>
+      <td class="num">${pval(c.pearson_p)}</td><td class="num">${pval(c.p_holm)}</td><td class="num">${num(c.spearman_rho, 3)}</td><td class="nowrap">${esc(c.strength)}</td><td>${sigBadge(c.p_holm)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="cols" style="margin-top:16px">
+      <div><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>산점도</b>
+        <select id="scatterSel" aria-label="산점도 변수">${C.map((c, i) => `<option value="${i}">${esc(c.label)} ↔ 보도 건수</option>`).join("")}</select></div>
+        <div class="plot"><canvas id="cScatter" aria-label="상관 산점도"></canvas></div></div>
+      <div><b>상관행렬 (Pearson r)</b><div class="scroll" style="margin-top:8px"><table class="heat" id="heat"></table></div>
+        <p class="note">색이 진할수록 상관이 강함 (파랑 +, 빨강 −)</p></div>
+    </div>${aiNote("correlation")}`);
+
+  if (W) section("요일 효과", "평일·주말 일간 보도 건수 비교 (Mann-Whitney U), 요일 간 비교 (Kruskal-Wallis)",
+    `<div class="chips">${chip("평일 평균", num(W.weekday_mean, 2) + "건")}${chip("주말 평균", num(W.weekend_mean, 2) + "건")}${chip("배율", num(W.ratio, 2) + "배")}
+      ${chip("U", `${num(W.mannwhitney_u, 1)}, p ${pval(W.p)}`)}${chip("효과크기 r", num(W.effect_r, 3))}${chip("Kruskal H", `${num(W.kruskal_h, 2)} (p ${pval(W.kruskal_p)})`)}<span class="chip">${sigBadge(W.p)}</span></div>
+     <div class="plot" style="height:240px"><canvas id="cWeekday" aria-label="요일별 평균 보도 건수"></canvas></div>${aiNote("weekday")}`);
+
+  if (TS) section("주제별 확산력 차이", "이슈당 보도 매체 수를 주제별로 비교 (Kruskal-Wallis, 이슈 20개 이상 주제)",
+    `<div class="chips">${chip("H", num(TS.kruskal_h, 2))}${chip("p", pval(TS.p))}${chip("효과크기 ε²", num(TS.epsilon2, 3))}<span class="chip">${sigBadge(TS.p)}</span></div>
+     <div class="scroll"><table><thead><tr><th>주제</th><th class="num">이슈 수</th><th class="num">이슈당 평균 매체 수</th><th class="num">중앙값</th><th class="num">대형 확산 비율</th></tr></thead><tbody>
+     ${TS.groups.map(g => `<tr><td>${esc(g.topic)}</td><td class="num">${num(g.issues)}</td><td class="num">${num(g.mean_press, 2)}</td><td class="num">${num(g.median_press, 1)}</td><td class="num">${num(g.wide_share * 100, 1)}%</td></tr>`).join("")}
+     </tbody></table></div>${aiNote("topic_spread")}`);
+
+  if (TM) section("주제 구성 변화", "월별 주제 구성이 시기에 따라 다른지 검정 (카이제곱 독립성 검정)",
+    `<div class="chips">${chip("χ²", `${num(TM.chi2, 2)} (자유도 ${TM.dof})`)}${chip("p", pval(TM.p))}${chip("Cramér's V", num(TM.cramers_v, 3))}<span class="chip">${sigBadge(TM.p)}</span></div>
+     <div class="scroll"><table class="heat" id="tmHeat"></table></div><p class="note">월별 기사 중 주제 비중(%) · 진할수록 비중이 큼</p>${aiNote("topic_month")}`);
+
+  section("홍보비 연계 분석", "월별 홍보비 집행액과 보도 건수의 상관 (data/budget.json)",
+    !B || !B.available ? `<p class="note">${esc(B ? B.note : "자료 없음")}</p>${aiNote("budget")}`
+      : `<div class="chips">${chip("n", B.n + "개월")}${chip("Pearson r", `${num(B.pearson_r, 3)} (p ${pval(B.pearson_p)})`)}${chip("Spearman ρ", num(B.spearman_rho, 3))}${chip("보도 1건당 홍보비", num(B.cost_per_article) + "원")}<span class="chip">${sigBadge(B.pearson_p)}</span></div>${aiNote("budget")}`);
+
+  section("제언 및 유의사항", "",
+    `${AI?.recommendations ? `<div class="ai"><span class="ai-tag">AI 제언</span><ul class="list">${AI.recommendations.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div>` : ""}
+     <h3 style="font-size:14px;margin:16px 0 4px">데이터 한계</h3><ul class="list">${(R.limitations || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+     <div class="methods" style="margin-top:14px"><b>분석 방법</b><ul>
+       <li>상관: Pearson r (95% 신뢰구간은 Fisher z 변환), Spearman ρ 병기, 다중비교는 Holm 보정</li>
+       <li>집단 비교: Mann-Whitney U (효과크기 r = Z/√N), Kruskal-Wallis H (효과크기 ε²), 카이제곱 독립성 검정 (Cramér's V)</li>
+       <li>유의수준 α = 0.05 · * p&lt;0.05, ** p&lt;0.01, *** p&lt;0.001 · 진행 중인 마지막 주는 주간 분석에서 제외</li>
+       <li>AI 해석은 계산된 수치만을 근거로 생성되며, 최종 판단은 담당자 검토가 필요함</li></ul></div>`);
+
+  root.innerHTML = parts.join("");
+
+  // ── 차트 ──
+  U.chartDefaults();
+  const charts = [];
+  function heatColor(v, max = 1) {
+    if (v == null) return "";
+    const a = Math.min(1, Math.abs(v) / max) * 0.75;
+    return `background: rgba(${v >= 0 ? "29,79,156" : "192,59,59"}, ${a.toFixed(2)}); color: ${a > .45 ? "#fff" : "inherit"}`;
+  }
+  function drawAll() {
+    charts.splice(0).forEach(c => c.destroy());
+    const grid = cssVar("--grid"), muted = cssVar("--muted"), ink = cssVar("--text-2");
+    const c1 = cssVar("--c-articles"), c2 = cssVar("--c-accent");
+    const axes = (xt, yt) => ({
+      x: { grid: { display: false }, border: { color: grid }, ticks: { color: ink, maxRotation: 0, autoSkip: true }, title: xt ? { display: true, text: xt, color: muted } : undefined },
+      y: { min: 0, grid: { color: grid }, border: { display: false }, ticks: { color: muted }, title: yt ? { display: true, text: yt, color: muted } : undefined },
+    });
+    const legend = { labels: { color: ink, boxWidth: 12 } };
+    const tip = U.tooltipStyle();
+
+    charts.push(new Chart(document.getElementById("cTrend"), {
+      data: { labels: T.series.map(s => `${+s.week.slice(5, 7)}/${+s.week.slice(8)}`), datasets: [
+        { type: "bar", label: "주간 보도 건수", data: T.series.map(s => s.articles), backgroundColor: c1, borderRadius: 4, maxBarThickness: 22, order: 2 },
+        { type: "line", label: "추세선(선형회귀)", data: T.series.map((_, i) => T.intercept + T.slope_per_week * i), borderColor: c2, borderWidth: 2, pointRadius: 0, order: 1 },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend, tooltip: { ...tip, callbacks: { title: it => `${T.series[it[0].dataIndex].week} 주`, label: c => `${c.dataset.label}: ${num(c.parsed.y, 1)}건` } } },
+        scales: axes("주 시작일", "건") },
+    }));
+
+    if (C.length) {
+      const sel = document.getElementById("scatterSel");
+      const scatter = () => {
+        const c = C[+sel.value];
+        const xs = c.points.map(p => p[0]), ys = c.points.map(p => p[1]);
+        const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+        const sxy = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0), sxx = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+        const b = sxx ? sxy / sxx : 0, a = my - b * mx, lo = Math.min(...xs), hi = Math.max(...xs);
+        const prev = charts.findIndex(ch => ch.canvas.id === "cScatter");
+        if (prev >= 0) charts.splice(prev, 1)[0].destroy();
+        charts.push(new Chart(document.getElementById("cScatter"), {
+          data: { datasets: [
+            { type: "scatter", label: "주", data: c.points.map(([x, y]) => ({ x, y })), backgroundColor: c1, pointRadius: 4 },
+            { type: "line", label: `회귀선 (r=${num(c.pearson_r, 3)})`, data: [{ x: lo, y: a + b * lo }, { x: hi, y: a + b * hi }], borderColor: c2, borderWidth: 2, pointRadius: 0 },
+          ] },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend, tooltip: { ...tip, callbacks: { label: k => `${c.label} ${num(k.parsed.x, 2)} · 보도 ${num(k.parsed.y)}건` } } },
+            scales: { x: { type: "linear", grid: { color: grid }, ticks: { color: muted }, title: { display: true, text: c.label, color: muted } },
+              y: { min: 0, grid: { color: grid }, ticks: { color: muted }, title: { display: true, text: "주간 보도 건수", color: muted } } } },
+        }));
+      };
+      sel.onchange = scatter; scatter();
+      const M = R.matrix;
+      document.getElementById("heat").innerHTML = `<thead><tr><th></th>${M.labels.map(l => `<th>${esc(l)}</th>`).join("")}</tr></thead><tbody>` +
+        M.r.map((row, i) => `<tr><th>${esc(M.labels[i])}</th>${row.map(v => `<td style="${heatColor(v)}">${v == null ? "–" : v.toFixed(2)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    }
+
+    if (W) charts.push(new Chart(document.getElementById("cWeekday"), {
+      type: "bar",
+      data: { labels: ["월", "화", "수", "목", "금", "토", "일"], datasets: [{ label: "평균 보도 건수", data: W.dow_mean,
+        backgroundColor: W.dow_mean.map((_, i) => i >= 5 ? c2 : c1), borderRadius: 4, maxBarThickness: 40 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: c => `평균 ${num(c.parsed.y, 2)}건` } } }, scales: axes(null, "건/일") },
+    }));
+
+    if (TM) {
+      const max = Math.max(...TM.share.flat());
+      document.getElementById("tmHeat").innerHTML = `<thead><tr><th>월</th>${TM.topics.map(t => `<th>${esc(t)}</th>`).join("")}</tr></thead><tbody>` +
+        TM.months.map((m, i) => `<tr><th>${m}</th>${TM.share[i].map(v => `<td style="${heatColor(v, max)}">${v.toFixed(1)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    }
+  }
+  U.initTheme(drawAll);
+  drawAll();
+})();
+</script>
+</body>
+</html>
