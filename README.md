@@ -38,6 +38,9 @@ ADMIN_ID=admin ADMIN_PASSWORD='강한비밀번호' NAVER_CLIENT_ID=... NAVER_CLI
 ```
 `/admin` 에서 로그인하면 수집을 직접 실행할 수 있습니다.
 
-## 배포 (예: Render)
-Web Service → Build `pip install -r requirements.txt`, Start `python server.py`, 환경변수에 위 키를 등록합니다.
+## Render 배포
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/mozacell-maker/asan-newsdata)
+
+버튼을 누르면 `render.yaml` 설정대로 웹 서비스가 만들어집니다. 화면에서 `ADMIN_PASSWORD`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`(선택: `GEMINI_API_KEY`)를 입력하세요.
+무료 플랜은 15분간 접속이 없으면 잠들어 첫 접속이 30초~1분 걸리며, 관리자 화면에서 갱신한 데이터는 재배포 시 사라집니다(매일 GitHub Actions가 커밋한 data.js 가 기준).
 정적 호스팅(GitHub Pages 등)만 쓴다면 GitHub Actions 워크플로가 매일 `data.js` 를 갱신합니다.
